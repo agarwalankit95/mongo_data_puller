@@ -14,29 +14,34 @@ class MongoDataPuller
   def pull
     objects = @query
 
-    # Last updated for multiple fields
-    last_updated = []
-    @from_date_fields.each do |k,v|
-      max_date = @target.collection.aggregate([{:$group => {:_id => '', maxDate: {:$max => "$#{k}_#{v}"}}}])
-      last_updated << max_date.first["maxDate"] unless max_date.blank?
-    end
-
-    # Finding out last updated date
-    last_updated = last_updated.compact
-    if last_updated.blank?
-      last_updated = @default_from_date
+    if @from_date_fields.blank?
+      all_objects = objects
     else
-      threshold_date = Time.now - THRESHOLD_TIME_LIMIT
-      last_updated = last_updated.min
-      last_updated = threshold_date if threshold_date > last_updated
+      # Last updated for multiple fields
+      last_updated = []
+      @from_date_fields.each do |k,v|
+        max_date = @target.collection.aggregate([{:$group => {:_id => '', maxDate: {:$max => "$#{k}_#{v}"}}}])
+        last_updated << max_date.first["maxDate"] unless max_date.blank?
+      end
+
+      # Finding out last updated date
+      last_updated = last_updated.compact
+      if last_updated.blank?
+        last_updated = @default_from_date
+      else
+        threshold_date = Time.now - THRESHOLD_TIME_LIMIT
+        last_updated = last_updated.min
+        last_updated = threshold_date if threshold_date > last_updated
+      end
+
+      # Making queries for last updated date
+      last_updated = last_updated.strftime("%Y-%m-%d %H:%M:%S")
+      last_updated_query = @from_date_fields.collect{|k,v| "`#{k}`.`#{v}` >= '#{last_updated}'"}.join(" OR ")
+      update_select_query = @from_date_fields.collect{|k,v| "`#{k}`.`#{v}` #{k}_#{v}"}.join(",")
+
+      all_objects = objects.where(last_updated_query).select(update_select_query)
     end
 
-    # Making queries for last updated date
-    last_updated = last_updated.strftime("%Y-%m-%d %H:%M:%S")
-    last_updated_query = @from_date_fields.collect{|k,v| "`#{k}`.`#{v}` >= '#{last_updated}'"}.join(" OR ")
-    update_select_query = @from_date_fields.collect{|k,v| "`#{k}`.`#{v}` #{k}_#{v}"}.join(",")
-
-    all_objects = objects.where(last_updated_query).select(update_select_query)
 
     total_count = all_objects.count
     # Incase total_count is a hash (is possible incase of group by)
