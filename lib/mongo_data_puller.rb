@@ -86,8 +86,6 @@ class MongoDataPuller
     attributes.each do |k,v|
       if v.is_a?(BigDecimal)
         new_attributes[k] = v.to_f
-      elsif v.is_a?(DateTime)
-        new_attributes[k] = v.utc
       else
         new_attributes[k] = v
       end
